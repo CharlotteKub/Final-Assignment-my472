@@ -51,7 +51,8 @@
 # thirdly, by having data from 21 months I am able to compare different times of the year
 
 
-
+library(jsonlite)
+library(tidyverse)
 
 # I will offer several identification strategies:
 
@@ -60,7 +61,7 @@
 
 
 
-### Written Questions ####
+### Written Questions with Answers ####
 
 written_questions_url <- "https://questions-statements-api.parliament.uk/api/writtenquestions/questions"
 written_questions <- fromJSON(written_questions_url)
@@ -120,7 +121,7 @@ fetch_data_written_all <- function(url, dates_1, dates_2) {
 written_questions_data <- fetch_data_written_all(written_questions_url, dates_1, dates_2)
 written_questions_data <- written_questions_data$value
 
-table(written_questions_data$value$house)
+table(written_questions_data$house)
 
 #### trying out a loop 
 
@@ -155,7 +156,8 @@ dates_1_1 <- c("2017-11-01", "2017-12-01", "2018-01-01", "2018-02-01", "2018-03-
 dates_2_2 <- c("2017-12-01", "2018-01-01", "2018-02-01", "2018-03-01", "2018-04-01", "2018-05-01", "2018-06-01", "2018-07-01", "2018-08-01", "2018-09-01", "2018-10-01", "2018-11-01", "2018-12-01", "2019-01-01", "2019-02-01", "2019-03-01", "2019-04-01", "2019-05-01", "2019-06-01", "2019-06-30", "2019-08-01")
 
 
-written_question_url_no2 <- "https://questions-statements-api.parliament.uk/api/writtenquestions/questions?take=100"
+written_question_url_no2 <- "https://questions-statements-api.parliament.uk/api/writtenquestions/questions?expandMember=true&take=100"
+
 
 fetch_written_data <- function(url, dates_1_1, dates_2_2) {
   result_df <- data.frame()
@@ -175,8 +177,14 @@ fetch_written_data <- function(url, dates_1_1, dates_2_2) {
 written_data <- fetch_written_data(written_question_url_no2, dates_1_1, dates_2_2)
 written_data <- written_data$value
 
-written_questions_data$oral_written <- ("written")
+written_data$oral_written <- ("written")
 
+MP_name <- written_data$askingMember$listAs
+written_data$MP_name <- MP_name
+
+# subsetting to merge with oral questions
+
+written_questions_data <- written_data %>% select(c(id,askingMemberId, MP_name, dateTabled, dateAnswered, uin, questionText,answeringBodyName,oral_written ))
 
 ##### getting data for oral questions 
 
@@ -204,10 +212,20 @@ oral_questions_data <- fetch_data(oral_questions_url, dates_1_1)
 oral_questions_data$oral_written <- ("oral")
 
 
+
+oral_questions_data$MP_name <- oral_questions_data$AskingMember$ListAs
+
+oral_questions_data <- oral_questions_data %>% rename(dateTabled = TabledWhen) %>% 
+  rename(askingMemberId = AskingMemberId) %>% rename(uin = UIN) %>% rename(questionText = QuestionText) %>% 
+  rename(answeringBodyName = AnsweringBody) %>%
+  rename(dateAnswered = AnsweringWhen) %>% rename(id = Id)
+
+oral_questions_data <- oral_questions_data %>% select(c(id,askingMemberId, MP_name, dateTabled, dateAnswered, uin, questionText,answeringBodyName,oral_written ))
+
+
 ### merge oral and written questions data 
 
 all_questions_data <- rbind(written_questions_data, oral_questions_data)
-
 
 
 ######## written questions 
@@ -238,12 +256,23 @@ table(written_questions_data$answeringBodyId)
 
 written_questions_topical <- written_questions_data %>% filter(answeringBodyName %in% c('Department for Communities and Local Government', 'Treasury','Department for International Trade', 'HM Treasury','Department for Business, Energy and Industrial Strategy', 'Department of Health', 'Department of Health and Social Care', 'Women and Equalities','Department for Work and Pensions'))
 
+
+all_questions_topical <- all_questions_data  %>% filter(answeringBodyName %in% c('Department for Communities and Local Government', 'Treasury','Department for International Trade', 'HM Treasury','Department for Business, Energy and Industrial Strategy', 'Department of Health', 'Department of Health and Social Care', 'Women and Equalities','Department for Work and Pensions'))
+
+
+
 written_questions_topical <- written_questions_topical %>% 
   mutate(economic_welfare = case_when(
     answeringBodyName %in% c('Department for Communities and Local Government', 'Treasury', 'Department for International Trade', 'HM Treasury', 'Department for Business, Energy and Industrial Strategy') ~ "economics",
     answeringBodyName %in% c('Department of Health', 'Department of Health and Social Care', 'Women and Equalities', 'Department for Work and Pensions') ~ "welfare" ))
 
 table(written_questions_topical$economic_welfare)
+
+
+all_questions_topical <- all_questions_topical %>% 
+  mutate(economic_welfare = case_when(
+    answeringBodyName %in% c('Department for Communities and Local Government', 'Treasury', 'Department for International Trade', 'HM Treasury', 'Department for Business, Energy and Industrial Strategy') ~ "economics",
+    answeringBodyName %in% c('Department of Health', 'Department of Health and Social Care', 'Women and Equalities', 'Department for Work and Pensions') ~ "welfare" ))
 
 
 ### identifying factors: 
@@ -253,7 +282,7 @@ table(written_questions_topical$economic_welfare)
 table(written_questions_topical$askingMember$party)
 
 written_questions_topical %>% group_by(economic_welfare, askingMember$party) %>%
- count()
+  count()
 
 
 table(written_questions_topical$answerText)
@@ -275,13 +304,15 @@ length(written_questions_topical$answerText)
 
 askingmembers <- written_questions_topical$askingMember$listAs
 
+Askingmembers <- all_questions_topical$MP_name
+
 members_url <- "https://members-api.parliament.uk/api/Members/Search?Name="
 
 
 library(stringr)
 
 # Extracting the first word from each string
-data_members_first_words <- str_extract(askingmembers, "[^,\\s]+")
+data_members_first_words <- str_extract(Askingmembers, "[^,\\s]+")
 
 data_members_first_words <- unique(data_members_first_words) # attention I am not getting all with the same name
 
@@ -294,23 +325,24 @@ data23$items$value$gender
 test_data_members <-data_members_first_words[1:10]
 
 get_members_data <- function(url, names) {
-
-data_members <-  data.frame()
-
-for (i in names) {
-  member_data <- fromJSON(paste0(url, i, "&take=1&MembershipInDateRange.WasMemberOnOrAfter=2017-11-01"))
-  member_data <- member_data$items
   
-  data_members <- bind_rows(data_members, member_data)
-}
-
-return(data_members)
+  data_members <-  data.frame()
+  
+  for (i in names) {
+    member_data <- fromJSON(paste0(url, i, "&take=1&MembershipInDateRange.WasMemberOnOrAfter=2017-11-01"))
+    member_data <- member_data$items
+    
+    data_members <- bind_rows(data_members, member_data)
+  }
+  
+  return(data_members)
 }
 
 
 members_data_final <- get_members_data(members_url, data_members_first_words)
 
 members_data_final <- members_data_final$value
+
 members_data_final <-members_data_final %>% rename( "askingMemberId" = "id")
 
 table(members_data_final$latestHouseMembership$membershipEndDate)
@@ -321,13 +353,170 @@ table(members_data_final$thumbnailUrl)
 
 members_data_final$thumbnailUrl[1]
 
+
+
 ### merge members and questions data together
 
 
 written_questions_merged <- left_join(written_questions_topical, members_data_final, by = "askingMemberId")
 written_questions_merged <- unique(written_questions_merged)
 
+written_questions_merged$economic_welfare.factor <- as.factor(written_questions_merged$economic_welfare)
+
+levels(written_questions_merged$economic_welfare.factor) <- c("0", "1")
+
+written_questions_merged$economic_welfare.factor <- factor(written_questions_merged$economic_welfare.factor,
+                                                           levels = c(0,1),
+                                                           labels = c("economics", "welfare"))
+
+levels(written_questions_merged$economic_welfare.factor)
+
+written_questions_merged$askingMember$party
+
+
+
+##### plot counts ###
+
+written_questions_merged %>% group_by(economic_welfare) %>%
+  count()
+
 ## Logit regression 
+
+levels(written_questions_merged$gender)
+
+model1 <- glm(economic_welfare.factor ~ askingMember$party + gender, family = binomial, data = written_questions_merged)
+
+stargazer::stargazer(model1, type = "text")
+
+?stargazer()
+?glm()
+
+
+
+
+
+##### calculate time until answer 
+# using: dateForAnswer and dateTabled
+
+
+
+date1 <- "2017-07-20T00:00:00"
+date2 <- "2017-08-15T00:00:00"
+
+# Load the lubridate package
+library(lubridate)
+
+# Parse the dates
+parsed_date1 <- ymd_hms(date1)
+parsed_date2 <- ymd_hms(date2)
+
+# Calculate the time difference in days
+time_difference_days <- as.numeric(difftime(parsed_date2, parsed_date1, units = "days"))
+
+written_questions_merged$dateTabled <- ymd_hms(written_questions_merged$dateTabled)
+written_questions_merged$dateForAnswer <- ymd_hms(written_questions_merged$dateForAnswer)
+written_questions_merged$dateAnswered <- ymd_hms(written_questions_merged$dateAnswered)
+
+written_questions_merged <- written_questions_merged %>% mutate(answering_time = as.numeric(difftime(dateForAnswer,dateTabled, units = "days")))
+
+written_questions_merged <- written_questions_merged %>% mutate(answering_time_2 = as.numeric(difftime(dateAnswered,dateTabled, units = "days")))
+
+
+
+
+
+model2 <- lm(answering_time ~ economic_welfare.factor, data = written_questions_merged)
+
+written_questions_merged %>% group_by(economic_welfare) %>%
+  summarize(mean_answering_time = mean(answering_time_2, na.rm = TRUE))
+
+written_questions_merged %>% group_by(id, economic_welfare) %>%
+  summarize(answering_time_2) %>% ggplot(aes(x = id, y = answering_time_2, fill= economic_welfare, color = economic_welfare)) +
+  geom_col() +
+  scale_color_manual(values = c("lightblue","darkgreen")) +
+  scale_fill_manual(values = c("lightblue", "darkgreen")) +
+  theme_bw() +
+  ylab("Days until Answer") +
+  xlab("Question ID")
+
+?scale_color_manual()
+str(written_questions_merged$answering_time)
+
+
+written_questions_merged %>% group_by(gender, economic_welfare) %>%
+  count()
+
+#### deprivation of constituencies ###
+
+deprivation <- readxl::read_excel("Desktop/Data_for_Data_Scientists/Final-Assignment-my472/deprivation-dashboard.xlsx", 
+                          sheet = "Data constituencies")
+
+written_questions_merged$askingMember$memberFrom
+
+ConstituencyName <- written_questions_merged$askingMember$memberFrom
+
+written_questions_merged$ConstituencyName <- ConstituencyName
+
+# merge both datasets 
+
+written_questions_constituencies <- left_join(written_questions_merged,deprivation, by = "ConstituencyName")
+
+written_questions_constituencies$Income
+
+model2 <- glm(economic_welfare.factor ~ Income, data = written_questions_constituencies, family = binomial)
+
+written_questions_constituencies$Income
+
+
+
+
+#### measuring seniority of MPs #####
+
+# using membership startdate 
+
+members_data_final$latestHouseMembership$membershipStartDate
+
+## new variable with enddate of government 
+
+enddate_government <- c("2019-07-25T00:00:00")
+
+written_questions_constituencies$enddate_government <- enddate_government
+
+parliament_entry <- written_questions_constituencies$latestHouseMembership$membershipStartDate 
+written_questions_constituencies$parliament_entry <- parliament_entry
+
+written_questions_constituencies$parliament_entry <- ymd_hms(written_questions_constituencies$parliament_entry)
+written_questions_constituencies$enddate_government <- ymd_hms(written_questions_constituencies$enddate_government)
+
+str(written_questions_constituencies$parliament_entry)
+written_questions_constituencies <- written_questions_constituencies %>% mutate (seniority = as.numeric(difftime(enddate_government,parliament_entry, units = "days")))
+
+written_questions_constituencies$seniority
+written_questions_constituencies$`Health deprivation and disability`
+
+model4 <- glm(economic_welfare.factor ~ seniority, data = written_questions_constituencies, family = binomial)
+
+
+model_all <- glm(economic_welfare.factor ~  askingMember$party  + gender + seniority + Income + `Health deprivation and disability`, data = written_questions_constituencies, family = binomial)
+
+stargazer::stargazer(model_all, type = "text")
+
+
+######### working with UK Geodata for constituencies #######
+
+library(sf)
+library(tmap)
+
+# load data
+uk_constituencies <- sf::read_sf("Data_for_Data_Scientists/Final-Assignment-my472/UK constituency data/WPC_Dec_2018_FCB_UK.shp")
+
+plot(uk_constituencies)
+
+geo_data_written_questions_constituencies <- left_join(written_questions_constituencies,uk_constituencies, by = c("ONSConstID", "pcon18cd"))
+
+
+written_questions_constituencies$ONSConstID
+uk_constituencies$pcon18cd
 
 # PLAN
 
@@ -350,15 +539,65 @@ written_questions_merged <- unique(written_questions_merged)
 ## upload committees data 
 
 
-committees <- readxl::read_xls("Data_for_Data_Scientists/Final-Assignment-my472/committees.xlsx")
+committees <- readxl::read_excel("Data_for_Data_Scientists/Final-Assignment-my472/committees.xlsx")
 committees <- committees %>% rename( "askingMemberId"= "mnis_id")
 
 
 members_committees <- left_join(members_data_final, committees, by = "askingMemberId")
 
 
+
 ### sort committees into economics and health/ welfare and other and check congruence 
 ## 
 
+table(members_committees$committee_name)
 
+
+### Economy Question:###
+
+# Department for Communities and Local Government
+# Treasury 
+# Department for International Trade
+# HM Treasury
+# Department for Business, Energy and Industrial Strategy
+
+# Committees
+# Business and Trade Committee
+# Treasury Committee
+# Work and Pensions Committee
+# Finance Committee
+# Levelling Up, Housing and Communities Committee
+# Economic Affairs Committee
+
+
+
+### Health and Welfare Questions ###
+
+# Department of Health
+# Department of Health and Social Care
+# Women and Equalities
+# Department for Work and Pensions
+
+# Women and Equalities Committee
+# Health and Social Care Select Committee
+
+
+
+members_committees <- members_committees %>% mutate(econ_welfare_committee = case_when(committee_name %in% 
+                                                                                         c("Business and Trade Committee", 
+                                                                                           "Treasury Committee",
+                                                                                           "Finance Committee", 
+                                                                                           "Levelling Up, Housing and Communities Committee", 
+                                                                                           "Economic Affairs Committee") ~ "economics",
+                                                                                       committee_name %in% 
+                                                                                         c("Health and Social Care Committee", 
+                                                                                           "Women and Equalities Committee") ~ "welfare",
+                                                                                       TRUE ~ "other"))
+
+table(members_committees$econ_welfare_committee)
+
+
+members_committees <- members_committees %>% mutate(topical_congruence = case_when((economic_welfare == "economics" & econ_welfare_committee == "economics") | 
+                                                                                     (economic_welfare == "welfare" & econ_welfare_committee == "welfare") ~ 1, 
+                                                                                   TRUE ~ 0))
 

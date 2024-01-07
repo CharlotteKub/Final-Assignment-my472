@@ -1,0 +1,448 @@
+---
+title: "Final Assignment"
+author: "Charlotte Kuberka"
+date: "2024-01-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r packages, echo=FALSE, message=FALSE, warning=FALSE}
+library(jsonlite)
+library(tidyverse)
+library(ggplot2)
+library(sf)
+library(tmap)
+library(lubridate)
+library(stringr)
+library(dplyr)
+library(ggeffects)
+library(gt)
+```
+
+#### Option 2 Research question:
+
+
+__1. Introduction:__ 
+
+__What, if any, characteristics and factors discriminate MPs who tend to ask questions about economic issues from MPs who tend to ask questions about health and welfare issues?__ 
+
+To answer this research question, I used data from the [UK Parliament API](https://developer.parliament.uk/), and supplemented that with data on constituency characteristics. 
+I wrote several functions to get the first 100 written and oral questions in every month for most of Theresa May's premiership, specifically from 11/2017- 07/2019. I chose that time because it firstly only includes one cabinet with one prime minister which means that the data is not skewed by different governments and their different ideological positions. Secondly, I deliberately did not include the Covid time as the increased focus on health during that period would not allow for a proper representation of both question topics. Thirdly, by having data from 21 months I am able to compare different times of the year.
+
+__2. Managing the Data__
+
+I merged data on written and oral questions and complemented it with more detailed data on those MPs who asked questions. To do so, I wrote another function to get data from each MP who asked an economic or health and welfare (H&W) question from the [UK Parliament API](https://developer.parliament.uk/) and linked the datasets via the MPs name. Therefore, I had a sample with 4200 questions.
+
+To properly identify economic and health and welfare (H&W) questions, I decided to classify them via their answering body as in the UK parliament the questions are mostly addressed and consequently answered by the department that is responsible for the topic. 
+The classification table is shown below: 
+
+```{r echo=FALSE}
+
+# Create the classification dataframe
+classification <- data.frame(
+  Economics = c('Treasury','Department for International Trade', 'HM Treasury', 'Department for Business, Energy and Industrial Strategy'), 
+  Health_Welfare = c('Department of Health', 'Department of Health and Social Care', 'Women and Equalities', 'Department for Work and Pensions'))
+
+
+classification <- classification %>% rename("Economic Questions" = "Economics") %>% 
+  rename("Health and Welfare Questions" = "Health_Welfare")
+
+# Create a gt table
+classification_table <- classification %>%
+  gt() %>%
+  tab_header(
+    title = "Classification Table",
+    subtitle = "Which Departments were classified as Economics and Health & Welfare Departments?"
+  ) 
+
+# Print the table
+classification_table
+
+```
+After that classification, I only included questions answered by either one of the departments described above. Thus, I had a sample with 999 question that were classified either as economic or H&W questions. I then started my analysis. 
+To answer the RQ, I gathered MP characteristics that might influence the MPs question topic. Specifically, I decided to include gender, party, experience in parliament (seniority) and constituency characteristics in my analysis. The decision to include those factors had several reasons: firstly, party and gender have a strong effect on parliamentary activity in general (Quote).
+Moreover, as MPs represent a constituency it is likely that they are influenced by their characteristics in their legislative activities. Thus, MPs representing more economically deprived constituencies might ask more economic related questions than other MPs. 
+Moreover, experience of an MP might play a role, as MPs with a higher seniority tend to have more responsibility within parliament and might thus ask questions that are more important. Economic questions could be seen as more important than H&W questions as they directly affect the budget.
+
+
+```{r echo=FALSE, message=FALSE}
+
+dates_1 <- c("2017-11-01", "2017-12-01", "2018-01-01", "2018-02-01", "2018-03-01", "2018-04-01", "2018-05-01", "2018-06-01", "2018-07-01", "2018-08-01", "2018-09-01", "2018-10-01", "2018-11-01", "2018-12-01", "2019-01-01", "2019-02-01", "2019-03-01", "2019-04-01", "2019-05-01", "2019-06-01", "2019-07-01")
+dates_2 <- c("2017-12-01", "2018-01-01", "2018-02-01", "2018-03-01", "2018-04-01", "2018-05-01", "2018-06-01", "2018-07-01", "2018-08-01", "2018-09-01", "2018-10-01", "2018-11-01", "2018-12-01", "2019-01-01", "2019-02-01", "2019-03-01", "2019-04-01", "2019-05-01", "2019-06-01", "2019-06-30", "2019-08-01")
+
+
+written_question_url <- "https://questions-statements-api.parliament.uk/api/writtenquestions/questions?expandMember=true&take=100"
+
+
+# Function for getting written data
+
+fetch_written_data <- function(url, dates_1, dates_2) {
+  result_df <- data.frame()
+  
+  for (i in 1:length(dates_1)) {
+    # Form the API URL
+    data <- fromJSON(paste0(url, "&answeredWhenFrom=", dates_1[i], "&answeredWhenTo=", dates_2[i]))
+    data_response <- data$results
+    
+    # Append the data to the result dataframe
+    result_df <- bind_rows(result_df, data_response)
+  }
+  return(result_df)
+}
+
+
+# using function to get data for written questions
+
+written_data <- fetch_written_data(written_question_url, dates_1, dates_2)
+written_data <- written_data$value
+written_data$oral_written <- ("written")
+
+
+# unpacking nested variable and renaming into MP_name
+written_data$MP_name <- written_data$askingMember$listAs
+
+# subsetting to merge with oral questions
+
+written_data <- written_data %>% select(c(id,askingMemberId, MP_name, dateTabled, dateAnswered, uin, questionText,answeringBodyName,oral_written ))
+
+```
+
+
+```{r echo=FALSE, message=FALSE}
+##### getting data for oral questions 
+
+# writing function that only needs 2 parameters for oral data 
+
+fetch_data <- function(url, dates) {
+  # Initialize an empty dataframe to store the results
+  result_dataframe <- data.frame()
+  
+  for (i in dates) {
+    # Fetch data for each date
+    data_oral <- fromJSON(paste0(url, i))
+    
+    data_results <- data_oral$Response
+    
+    # Append the data to the result dataframe
+    result_dataframe <- bind_rows(result_dataframe, data_results)
+  }
+  
+  return(result_dataframe)
+}
+
+
+## using function and getting oral data 
+
+oral_questions_url <- "https://oralquestionsandmotions-api.parliament.uk/oralquestions/list?parameters.take=100&parameters.answeringDateStart="
+
+oral_questions_data <- fetch_data(oral_questions_url, dates_1)
+oral_questions_data$oral_written <- ("oral")
+
+# unpacking nested variable and renaming into MP_name
+oral_questions_data$MP_name <- oral_questions_data$AskingMember$ListAs
+
+# renaming variables and subsetting oral data to merge with written questions 
+
+oral_questions_data <- oral_questions_data %>% rename(dateTabled = TabledWhen) %>% 
+  rename(askingMemberId = AskingMemberId) %>% rename(uin = UIN) %>% rename(questionText = QuestionText) %>% 
+  rename(answeringBodyName = AnsweringBody) %>%
+  rename(dateAnswered = AnsweringWhen) %>% rename(id = Id)
+
+oral_questions_data <- oral_questions_data %>% select(c(id,askingMemberId, MP_name, dateTabled, dateAnswered, uin, questionText,answeringBodyName,oral_written))
+
+```
+
+
+
+```{r echo=FALSE, message=FALSE}
+### merge oral and written questions data 
+all_questions_data <- rbind(written_data, oral_questions_data)
+
+### classify questions based on answering department and only keep those questions that are classified within economics or health and welfare
+
+all_questions_topical <- all_questions_data  %>% filter(answeringBodyName %in% c('Treasury','Department for International Trade', 'HM Treasury','Department for Business, Energy and Industrial Strategy', 'Department of Health', 'Department of Health and Social Care', 'Women and Equalities','Department for Work and Pensions'))
+
+all_questions_topical <- all_questions_topical %>% 
+  mutate(economic_welfare = case_when(
+    answeringBodyName %in% c('Treasury', 'Department for International Trade', 'HM Treasury', 'Department for Business, Energy and Industrial Strategy') ~ "economics",
+    answeringBodyName %in% c('Department of Health', 'Department of Health and Social Care', 'Women and Equalities', 'Department for Work and Pensions') ~ "welfare" ))
+
+```
+
+
+```{r echo=FALSE, message=FALSE}
+
+###############################
+#### getting additional MP data
+##############################
+
+## creating vector to collect MP names who asked questions 
+Askingmembers <- all_questions_topical$MP_name
+
+members_url <- "https://members-api.parliament.uk/api/Members/Search?Name="
+
+# Extracting the first word from each string
+data_members_first_words <- str_extract(Askingmembers, "[^,\\s]+")
+
+data_members_first_words <- unique(data_members_first_words) # attention I am not getting all with the same name
+
+
+# Function 
+
+test_data_members <-data_members_first_words[1:10]
+
+get_members_data <- function(url, names) {
+  
+  data_members <-  data.frame()
+  
+  for (i in names) {
+    member_data <- fromJSON(paste0(url, i, "&take=1&MembershipInDateRange.WasMemberOnOrAfter=2017-11-01"))
+    member_data <- member_data$items
+    
+    data_members <- bind_rows(data_members, member_data)
+  }
+  
+  return(data_members)
+}
+
+
+# using function 
+
+members_data_final <- get_members_data(members_url, data_members_first_words)
+members_data_final <- members_data_final$value
+members_data_final <-members_data_final %>% rename( "askingMemberId" = "id")
+```
+
+
+```{r  echo=FALSE, message=FALSE, warning=FALSE, error=FALSE}
+### merge members and questions data together
+
+questions_merged <- left_join(all_questions_topical, members_data_final, by = "askingMemberId")
+questions_merged <- unique(questions_merged)
+
+# transform economic_welfare variable into factor to use it as dependent variable in my logit regression models later 
+
+questions_merged$'Economic or Health & Welfare Question' <- as.factor(questions_merged$economic_welfare)
+
+levels(questions_merged$'Economic or Health & Welfare Question') <- c("0", "1")
+
+questions_merged$economic_welfare.factor <- factor(questions_merged$'Economic or Health & Welfare Question',
+                                                   levels = c(0,1),
+                                                   labels = c("economics", "welfare"))
+```
+
+
+
+```{r echo=FALSE, error=FALSE, warning=FALSE}
+##### calculate time until answer #######
+# using: dateAnswered and dateTabled
+
+questions_merged$dateTabled <- ymd_hms(questions_merged$dateTabled)
+questions_merged$dateAnswered <- ymd_hms(questions_merged$dateAnswered)
+questions_merged <- questions_merged %>% mutate(answering_time = as.numeric(difftime(dateAnswered,dateTabled, units = "days")))
+
+```
+
+However, another important factor differentiating economic and H&W question might be the length of the answering time. To examine if there are differences between both types of questions, I calculated the difference between the date the question was tabled and the date it was answered in days. The descriptive results are shown below:
+
+```{r echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
+questions_merged %>% group_by(dateTabled, economic_welfare, oral_written) %>%
+  summarize(answering_time) %>% ggplot(aes(x = dateTabled, y = answering_time, fill= economic_welfare, color = economic_welfare)) +
+  geom_col() +
+  scale_color_manual(values = c("lightblue","darkgreen")) +
+  scale_fill_manual(values = c("lightblue", "darkgreen")) +
+  facet_wrap(~ oral_written)+ 
+  theme_bw() +
+  ylab("Days until Answer") +
+  xlab("Question ID")
+```
+
+It can be seen in the graph that there are no significant differences in the answering time between economic and H&W questions. To examine the effect of constituency characteristics on an MPs question behavior, I used data from the [House of Commons Library](https://commonslibrary.parliament.uk/constituency-data-indices-of-deprivation/) on deprivation indices for UK constituencies. I used the health and economic deprivation index with higher values indication a higher deprivation.
+
+```{r, echo=FALSE}
+#### getting data to examine deprivation of constituencies ###
+setwd("~/Desktop/Data_for_Data_Scientists/Final-Assignment-my472")
+
+deprivation <- readxl::read_excel("deprivation-dashboard.xlsx", 
+                                  sheet = "Data constituencies")
+
+
+# unpacked nested variable to get Constituency Name
+
+ConstituencyName <- questions_merged$latestHouseMembership$membershipFrom
+
+questions_merged$ConstituencyName <- ConstituencyName
+
+
+# merge both datasets 
+
+written_questions_constituencies <- left_join(questions_merged, deprivation, by = "ConstituencyName")
+```
+
+
+```{r echo=FALSE, warning=FALSE, error=FALSE, message=FALSE}
+#### measuring seniority of MPs #####
+
+# using membership startdate 
+## create new variable with end date of government as end date of MP term
+
+enddate_government <- c("2019-07-25T00:00:00")
+written_questions_constituencies$enddate_government <- enddate_government
+
+
+# unpack nested variable for parliamentary entry of MPs
+parliament_entry <- written_questions_constituencies$latestHouseMembership$membershipStartDate 
+written_questions_constituencies$parliament_entry <- parliament_entry
+
+# calculating length of MP membership in days using difftime() and creating new variable called seniority 
+
+written_questions_constituencies$parliament_entry <- ymd_hms(written_questions_constituencies$parliament_entry)
+written_questions_constituencies$enddate_government <- ymd_hms(written_questions_constituencies$enddate_government)
+
+written_questions_constituencies <- written_questions_constituencies %>% mutate (seniority = as.numeric(difftime(enddate_government,parliament_entry, units = "days")))
+
+# rename variables name for easier use in regression models later 
+written_questions_constituencies$health_index <- written_questions_constituencies$`Health deprivation and disability`
+written_questions_constituencies$party <- written_questions_constituencies$latestParty$name
+```
+
+__3. Analyzing the Data__
+To properly analyze the data, I will employ a logistic regression model, calculating the predicted probabilities for the MP's characteristics on asking H&W or Economic Questions.
+As already seen in the Regression Table, some of the characteristics have no (significant) effect. However, the MP's party, gender and the constituency's deprivation seem to have an effect. Firstly, male MPs are around 20% less likely to ask H&W questions than females. Secondly, MPs from the Green party are less likely and MPs from the Labour Co-op party are more likely to ask H&W questions compared to the Conservatives as reference category. Seniority does not seem to have an effect, and the higher an MPs constituency's Health Deprivation the more they are likely to ask a H&W question and vice versa for the constituency's economic deprivation. The predicted probabilities show that trend. 
+
+```{r  echo=FALSE, warning=FALSE, error=FALSE, message=FALSE, comment=FALSE}
+
+labels <- c("Green Party, Ref: Conservative", "Independent, Ref: Conservative", "Labour, Ref: Conservative", "Labour(Co-op), Ref: Conservative", "Liberal Democrats, Ref: Conservative", "Independent Group, Ref: Conservative", "Gender: Male, Ref: Female", "Seniority", "Income Deprivation of Constituency", "Health Deprivation of Constituency")
+
+DV_label = c("Health & Welfare Question (Ref: Economic Question)")
+
+model_all <- glm( `Economic or Health & Welfare Question`~ as.factor(party) + gender + seniority + Income + health_index, data = written_questions_constituencies, family = binomial)
+
+stargazer::stargazer(model_all, type = "text", title = "Logit Regression Model on MP characteristics influencing the type of Question",
+dep.var.caption  = "Dependent Variable",
+covariate.labels = labels)
+
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, comment=FALSE}
+
+# calculating predicted probabilities for logit regression coefficients 
+
+health <- ggeffects::ggemmeans(model_all, "health_index[all]")
+income <- ggeffects::ggemmeans(model_all, "Income[all]")  
+gender <- ggeffects::ggemmeans(model_all, "gender") 
+party <- ggeffects::ggemmeans(model_all, "party") 
+seniority <- ggeffects::ggemmeans(model_all, "seniority[all]") 
+
+
+# Plot the predicted probabilities
+
+health %>% ggplot(aes(x=x, y = predicted)) + geom_line() + 
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2) +
+  labs(title = "Effect of MP's Constituency's Health Deprivation on Type of Question") +
+  xlab("Health Deprivation Index") +
+  ylab("Predicted Probability asking health & welfare question") + 
+  theme_bw()
+
+income %>% ggplot(aes(x=x, y = predicted)) + geom_line() +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2) +
+  labs(title = "Effect of MP's Constituency's Income Deprivation on Type of Question") +
+  xlab("Income Deprivation Index") +
+  ylab("Predicted Probability asking health & welfare question") + 
+  theme_bw() 
+
+seniority %>% ggplot(aes(x=x, y = predicted)) + geom_line() +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2) +
+  labs(title = "Effect of MP's Seniority on Type of Question") +
+  xlab("Seniority") +
+  ylab("Predicted Probability asking health & welfare question") + 
+  theme_bw() 
+  
+
+plot(gender) +
+  ggtitle("Effect of MP's Gender on Type of Question") +
+  labs(x = "Gender", y = "Predicted Probability asking health & welfare question")
+
+plot(party) +
+  ggtitle("Effect of MP's Party on Type of Question") +
+  labs(x="Party", y="Predicted Probability asking health & welfare question")
+
+```
+
+In a last step, I am trying to examine if there are spatial differences within the types of question. To analyze that, I used UK constituency data from the [Office for National Statistics](https://geoportal.statistics.gov.uk/search?collection=Dataset&sort=name&tags=all(BDY_PCON)). 
+I merged the data with the questions data set and calculated for each constituency the number of H&W and econ questions. As displayed in the map below, it does not seem as if there are geographical differences in the types of questions. 
+
+```{r echo=FALSE}
+######### working with UK Geodata for constituencies #######
+
+# load data
+uk_constituencies <- sf::read_sf("UK_constituency data 2/WPC_Dec_2018_GCB_GB.shp")
+
+# renaming variable
+uk_constituencies <- uk_constituencies %>% rename(ConstituencyName = pcon18nm)
+
+# merging data with question data 
+geo_data_written_questions_constituencies <- left_join(uk_constituencies, written_questions_constituencies, by = "ConstituencyName")
+
+# select relevant variables 
+geo_data_written_questions_constituencies <- geo_data_written_questions_constituencies %>% select(c(health_index,Income, geometry, ConstituencyName, long, lat))
+
+geo_data_written_questions_constituencies <- unique(geo_data_written_questions_constituencies)
+
+# calculating number of economic and welfare questions for each constituency 
+constituency_questions <- written_questions_constituencies %>% group_by(ConstituencyName, economic_welfare) %>%
+  count()
+
+# joining that data with the geodata 
+geo_data_written_questions_constituencies <- left_join(geo_data_written_questions_constituencies, constituency_questions, by = "ConstituencyName")
+
+# replacing NAs with 0
+geo_data_written_questions_constituencies$n <- geo_data_written_questions_constituencies$n %>% replace_na(0)
+
+# selecting relevant variables 
+geo_data_written_questions_constituencies <- geo_data_written_questions_constituencies %>% select(c(geometry, economic_welfare, n, ConstituencyName, health_index, Income, long, lat ))
+```
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+tmap_mode("view")
+
+# Attempt to fix invalid geometries
+geo_data_written_questions_constituencies <- sf::st_make_valid(geo_data_written_questions_constituencies)
+
+filtered_data <- geo_data_written_questions_constituencies %>%
+  filter(!is.na(economic_welfare))
+
+## removing id 661 as it doesnt fit the data structure for plotting (but its NA anyways)
+
+geo_data_written_questions_constituencies <- geo_data_written_questions_constituencies %>%
+  filter(ConstituencyName != 'Ross, Skye and Lochaber')
+
+
+# plotting Map with UK constituencies 
+
+tm_shape(geo_data_written_questions_constituencies) + 
+  tm_polygons() +
+  tm_shape(filtered_data) +
+  tm_fill("n", breaks = c(0, 1, 2, 3, 4, 5, 10, 20), palette = "Blues", title = "Questions No.") +
+  tm_facets(by = "economic_welfare", free.coords = TRUE, drop.empty.facets = TRUE) +
+   tm_layout(
+    title = c("Economic Questions", "Health & Welfare Questions"))
+
+```
+
+***
+__4. Conclusion__
+In general, my analysis showed that factors such as gender, party and constituency characteristics of MPs discriminate wether or not MPs ask economic or H&W questions. However, future research could try and analyze if there are characteristics in the answers given to those questions that discriminate by topic.
+
+#### Appendix: All code in this assignment
+
+```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE} 
+# this chunk generates the complete code appendix. 
+# eval=FALSE tells R not to run (``evaluate'') the code here (it was already run before).
+```
