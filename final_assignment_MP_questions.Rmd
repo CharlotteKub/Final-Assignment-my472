@@ -27,7 +27,7 @@ library(gt)
 
 The R Code and additional data files can be found in the Github Repo [here](https://github.com/CharlotteKub/Final-Assignment-my472.git).
 
-Word Count: 751 
+Word Count: 764 
 
 __1. Introduction:__ 
 
@@ -323,7 +323,7 @@ To properly analyze the data, I will employ a logistic regression model, calcula
 
 __3.1 Logit Regression__
 
-As already seen in the Regression Table, some of the characteristics have no (significant) effect. 
+As shown in the Regression Table, some of the characteristics have no (significant) effect. However, the MP's party, gender and the constituency's deprivation seem to have an effect.
 
 &ensp;
 
@@ -344,8 +344,8 @@ covariate.labels = labels)
 
 __3.2 Predicted Probabilities__
 
-
-However, the MP's party, gender and the constituency's deprivation seem to have an effect. Firstly, male MPs are around 20% less likely to ask H&W questions than females. Secondly, MPs from the Green party are less likely and MPs from the Labour Co-op party are more likely to ask H&W questions compared to the Conservatives as reference category. Seniority does not seem to have an effect, and the higher an MPs constituency's Health Deprivation the more they are likely to ask a H&W question and vice versa for the constituency's economic deprivation. The predicted probabilities show that trend. 
+For better visualization, the coefficients are calculated and plotted as predicted probabilities.
+Firstly, male MPs are approximately 20% less likely to ask H&W questions than females. Secondly, MPs from the Green party are less likely and MPs from the Labour Co-op party are more likely to ask H&W questions compared to the Conservatives as reference category. Seniority does not seem to have an effect, and the higher an MPs constituency's Health Deprivation the more they are likely to ask a H&W question and vice versa for the constituency's economic deprivation. Yet, no effects for seniority and the other parties.
 
 &ensp;
 
