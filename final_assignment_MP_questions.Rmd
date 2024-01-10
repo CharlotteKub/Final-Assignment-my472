@@ -25,20 +25,26 @@ library(gt)
 
 #### Option 2 Research question:
 
+The R Code and additional data files can be found in the Github Repo [here](https://github.com/CharlotteKub/Final-Assignment-my472.git).
+
+Word Count: 751 
 
 __1. Introduction:__ 
 
 __What, if any, characteristics and factors discriminate MPs who tend to ask questions about economic issues from MPs who tend to ask questions about health and welfare issues?__ 
 
-To answer this research question, I used data from the [UK Parliament API](https://developer.parliament.uk/), and supplemented that with data on constituency characteristics. 
-I wrote several functions to get the first 100 written and oral questions in every month for most of Theresa May's premiership, specifically from 11/2017- 07/2019. I chose that time because it firstly only includes one cabinet with one prime minister which means that the data is not skewed by different governments and their different ideological positions. Secondly, I deliberately did not include the Covid time as the increased focus on health during that period would not allow for a proper representation of both question topics. Thirdly, by having data from 21 months I am able to compare different times of the year.
+
+To answer this research question, I used data from the UK Parliament API, and supplemented that with data on constituency characteristics. I wrote several functions to get the first 100 written and oral questions in every month for most of Theresa May’s premiership, specifically from 11/2017- 07/2019. I selected this period for its consistency under one cabinet and prime minister, avoiding skewing due to diverse governmental ideologies. I excluded the Covid period due to its health-centric focus, ensuring a balanced representation of both question topics. Thirdly, the 21-month duration allows for comparisons across different times.
 
 __2. Managing the Data__
 
-I merged data on written and oral questions and complemented it with more detailed data on those MPs who asked questions. To do so, I wrote another function to get data from each MP who asked an economic or health and welfare (H&W) question from the [UK Parliament API](https://developer.parliament.uk/) and linked the datasets via the MPs name. Therefore, I had a sample with 4200 questions.
+I merged data on written and oral questions and complemented it with more detailed MP data. To do so, I wrote another function to get data from each MP who asked an economic or health and welfare (H&W) question from the UK Parliament API and linked the datasets via the MPs name. Therefore, I had a sample with 4200 questions.
 
-To properly identify economic and health and welfare (H&W) questions, I decided to classify them via their answering body as in the UK parliament the questions are mostly addressed and consequently answered by the department that is responsible for the topic. 
-The classification table is shown below: 
+
+To properly identify economic and health and welfare (H&W) questions, I classified them via their answering body as in the UK parliament the questions are mostly addressed and consequently answered by the department responsible for the topic.
+
+The classification table is shown below:
+
 
 ```{r echo=FALSE}
 
@@ -63,10 +69,10 @@ classification_table <- classification %>%
 classification_table
 
 ```
-After that classification, I only included questions answered by either one of the departments described above. Thus, I had a sample with 999 question that were classified either as economic or H&W questions. I then started my analysis. 
-To answer the RQ, I gathered MP characteristics that might influence the MPs question topic. Specifically, I decided to include gender, party, experience in parliament (seniority) and constituency characteristics in my analysis. The decision to include those factors had several reasons: firstly, party and gender have a strong effect on parliamentary activity in general (Quote).
-Moreover, as MPs represent a constituency it is likely that they are influenced by their characteristics in their legislative activities. Thus, MPs representing more economically deprived constituencies might ask more economic related questions than other MPs. 
-Moreover, experience of an MP might play a role, as MPs with a higher seniority tend to have more responsibility within parliament and might thus ask questions that are more important. Economic questions could be seen as more important than H&W questions as they directly affect the budget.
+
+&ensp;
+
+After that classification, I only included questions answered by either one of the departments described above. Thus, I had a sample with 999 question that were classified either as economic or H&W questions. I then started my analysis. To answer the RQ, I gathered MP characteristics that might influence the MPs question topic. Specifically, I decided to include gender, party, experience in parliament (seniority) and constituency characteristics in my analysis. The decision to include those factors had several reasons: firstly, party and gender have a strong effect on parliamentary activity in general (Quote). Moreover, as MPs represent a constituency it is likely that they are influenced by their characteristics in their legislative activities. Thus, MPs representing more economically deprived constituencies might ask more economic related questions than other MPs. Moreover, experience of an MP might play a role, as MPs with higher seniority tend to have more responsibility within parliament and thus ask more important questions. Economic questions could be seen as more important than H&W questions as they directly affect the budget.
 
 
 ```{r echo=FALSE, message=FALSE}
@@ -311,10 +317,17 @@ written_questions_constituencies$party <- written_questions_constituencies$lates
 ```
 
 __3. Analyzing the Data__
-To properly analyze the data, I will employ a logistic regression model, calculating the predicted probabilities for the MP's characteristics on asking H&W or Economic Questions.
-As already seen in the Regression Table, some of the characteristics have no (significant) effect. However, the MP's party, gender and the constituency's deprivation seem to have an effect. Firstly, male MPs are around 20% less likely to ask H&W questions than females. Secondly, MPs from the Green party are less likely and MPs from the Labour Co-op party are more likely to ask H&W questions compared to the Conservatives as reference category. Seniority does not seem to have an effect, and the higher an MPs constituency's Health Deprivation the more they are likely to ask a H&W question and vice versa for the constituency's economic deprivation. The predicted probabilities show that trend. 
 
-```{r  echo=FALSE, warning=FALSE, error=FALSE, message=FALSE, comment=FALSE}
+
+To properly analyze the data, I will employ a logistic regression model, calculating the predicted probabilities for the MP's characteristics on asking H&W or Economic Questions.
+
+__3.1 Logit Regression__
+
+As already seen in the Regression Table, some of the characteristics have no (significant) effect. 
+
+&ensp;
+
+```{r  echo=FALSE, warning=FALSE, error=FALSE, message=FALSE,  results='asis', comment=FALSE}
 
 labels <- c("Green Party, Ref: Conservative", "Independent, Ref: Conservative", "Labour, Ref: Conservative", "Labour(Co-op), Ref: Conservative", "Liberal Democrats, Ref: Conservative", "Independent Group, Ref: Conservative", "Gender: Male, Ref: Female", "Seniority", "Income Deprivation of Constituency", "Health Deprivation of Constituency")
 
@@ -322,12 +335,19 @@ DV_label = c("Health & Welfare Question (Ref: Economic Question)")
 
 model_all <- glm( `Economic or Health & Welfare Question`~ as.factor(party) + gender + seniority + Income + health_index, data = written_questions_constituencies, family = binomial)
 
-stargazer::stargazer(model_all, type = "text", title = "Logit Regression Model on MP characteristics influencing the type of Question",
+stargazer::stargazer(model_all, type = "html", title = "Logit Regression Model on MP characteristics influencing the type of Question",
 dep.var.caption  = "Dependent Variable",
 covariate.labels = labels)
 
 ```
+&ensp;
 
+__3.2 Predicted Probabilities__
+
+
+However, the MP's party, gender and the constituency's deprivation seem to have an effect. Firstly, male MPs are around 20% less likely to ask H&W questions than females. Secondly, MPs from the Green party are less likely and MPs from the Labour Co-op party are more likely to ask H&W questions compared to the Conservatives as reference category. Seniority does not seem to have an effect, and the higher an MPs constituency's Health Deprivation the more they are likely to ask a H&W question and vice versa for the constituency's economic deprivation. The predicted probabilities show that trend. 
+
+&ensp;
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE, comment=FALSE}
 
@@ -375,7 +395,10 @@ plot(party) +
 ```
 
 In a last step, I am trying to examine if there are spatial differences within the types of question. To analyze that, I used UK constituency data from the [Office for National Statistics](https://geoportal.statistics.gov.uk/search?collection=Dataset&sort=name&tags=all(BDY_PCON)). 
-I merged the data with the questions data set and calculated for each constituency the number of H&W and econ questions. As displayed in the map below, it does not seem as if there are geographical differences in the types of questions. 
+I merged the data with the questions data set and calculated for each constituency the number of H&W and economic questions. As displayed in the map below, it does not seem as if there are geographical differences in the types of questions. 
+
+&ensp;
+
 
 ```{r echo=FALSE}
 ######### working with UK Geodata for constituencies #######
@@ -436,8 +459,12 @@ tm_shape(geo_data_written_questions_constituencies) +
 
 ```
 
-***
+
+&ensp;
+
 __4. Conclusion__
+
+
 In general, my analysis showed that factors such as gender, party and constituency characteristics of MPs discriminate wether or not MPs ask economic or H&W questions. However, future research could try and analyze if there are characteristics in the answers given to those questions that discriminate by topic.
 
 #### Appendix: All code in this assignment
